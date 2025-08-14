@@ -1,78 +1,110 @@
 import os
 import sys
-import csv
 import json
-from docx import Document
-from docx.shared import Inches
+import requests
+from dotenv import load_dotenv
 
-# Install the necessary library: pip install python-docx
+# Load environment variables from .env file
+load_dotenv()
 
-# This script generates a Low-Level Design (LLD) document in .docx format
-# using the outputs from the discovery, mapping, and IaC generation steps.
+# Configure the Gemini API client
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    print("Error: GEMINI_API_KEY not found in environment variables.", file=sys.stderr)
+    sys.exit(1)
 
-def main(gcp_resources_file, aws_mapping_file, aws_tf_file, output_docx_file):
+GEMINI_MODEL = "gemini-1.5-pro"  # Using a more capable model for document generation
+
+def call_gemini(prompt):
     """
-    Generates the LLD document.
+    Calls the Gemini API to generate content.
     """
-    if not all(os.path.exists(f) for f in [gcp_resources_file, aws_mapping_file, aws_tf_file]):
-        print("One or more input files not found.", file=sys.stderr)
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    headers = {"Content-Type": "application/json"}
+    data = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.2,
+            "topP": 0.9,
+        }
+    }
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        response.raise_for_status() # Raises an HTTPError for bad responses (4xx or 5xx)
+        response_json = response.json()
+        
+        # Extract the text from the response
+        candidates = response_json.get("candidates")
+        if candidates and len(candidates) > 0:
+            parts = candidates[0].get("content", {}).get("parts", [])
+            if parts and len(parts) > 0:
+                return parts[0].get("text", "")
+    except requests.exceptions.RequestException as e:
+        print(f"API call failed: {e}", file=sys.stderr)
+        return None
+    except json.JSONDecodeError as e:
+        print(f"JSON decoding failed: {e}", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}", file=sys.stderr)
+        return None
+        
+    return None
+
+def main(input_tf_file, output_lld_file):
+    """
+    Reads the Terraform code and generates an LLD document.
+    """
+    if not os.path.exists(input_tf_file):
+        print(f"Input Terraform file not found: {input_tf_file}", file=sys.stderr)
         sys.exit(1)
-
-    print("[*] Starting LLD document generation...")
-    document = Document()
-    document.add_heading('AWS Migration - Low-Level Design Document', 0)
-    document.add_paragraph('This document outlines the design for the migrated infrastructure in AWS.')
-
-    # --- Section 1: Resource Inventory ---
-    document.add_heading('1. GCP Resource Inventory', level=1)
-    with open(gcp_resources_file, 'r') as f:
-        gcp_resources = json.load(f)
     
-    document.add_paragraph(f"Total GCP resources discovered: {len(gcp_resources)}")
-    for resource in gcp_resources[:20]: # Show a sample
-        document.add_paragraph(f"  - {resource}", style='List Bullet')
-    if len(gcp_resources) > 20:
-        document.add_paragraph("  - ...and more.", style='List Bullet')
-
-    # --- Section 2: Service Mapping ---
-    document.add_heading('2. Service Mapping (GCP to AWS)', level=1)
-    table = document.add_table(rows=1, cols=3)
-    hdr_cells = table.rows[0].cells
-    hdr_cells[0].text = 'GCP Resource'
-    hdr_cells[1].text = 'AWS Equivalent'
-    hdr_cells[2].text = 'Details'
-
-    with open(aws_mapping_file, 'r') as f:
-        reader = csv.reader(f)
-        next(reader) # Skip header
-        for row in reader:
-            if len(row) == 3:
-                cells = table.add_row().cells
-                cells[0].text = row[0]
-                cells[1].text = row[1]
-                cells[2].text = row[2]
-
-    # --- Section 3: AWS Terraform Configuration ---
-    document.add_heading('3. AWS Infrastructure as Code', level=1)
-    document.add_paragraph('The following Terraform code will be used to provision the AWS infrastructure.')
-    
-    with open(aws_tf_file, 'r') as f:
+    print(f"[*] Reading Terraform code from: {input_tf_file}")
+    with open(input_tf_file, 'r') as f:
         terraform_code = f.read()
 
-    document.add_paragraph('```hcl\n' + terraform_code + '\n```', style='No Spacing')
+    if not terraform_code:
+        print("[!] No Terraform code found. Exiting.", file=sys.stderr)
+        sys.exit(0)
 
-    print("[*] Saving document...")
-    document.save(output_docx_file)
-    print(f"[✓] LLD document generated at: {output_docx_file}")
+    print("[*] Generating LLD prompt for Gemini API...")
+    prompt = (
+        "You are an expert cloud architect and technical writer. "
+        "Based on the following AWS Terraform HCL code, "
+        "write a detailed Low-Level Design (LLD) document in Markdown format. "
+        "The LLD should describe the architecture, networking, security considerations, and the purpose of each resource. "
+        "Ensure the document is well-structured with clear headings and a professional tone.\n"
+        f"AWS Terraform HCL Code:\n\n{terraform_code}"
+    )
+
+    print("[*] Calling Gemini API to generate LLD...")
+    gemini_response = call_gemini(prompt)
+
+    if not gemini_response:
+        print("[!] Failed to get a response from Gemini. Exiting.", file=sys.stderr)
+        sys.exit(1)
+
+    print("[*] Writing LLD to Markdown file.")
+    
+    # --- FIX FOR DIRECTORY NOT FOUND ERROR ---
+    output_dir = os.path.dirname(output_lld_file)
+    if output_dir and not os.path.exists(output_dir):
+        print(f"Creating output directory: {output_dir}")
+        os.makedirs(output_dir, exist_ok=True)
+    # -----------------------------------------
+    
+    with open(output_lld_file, 'w') as f:
+        f.write(gemini_response)
+
+    print(f"[✓] LLD document generated and saved to: {output_lld_file}")
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 5:
-        print("Usage: python3 generate_aws_lld.py <GCP_RESOURCES_JSON> <AWS_MAPPING_CSV> <AWS_TF_FILE> <OUTPUT_DOCX_FILE>")
+    if len(sys.argv) < 3:
+        print("Usage: python3 generate_aws_lld.py <AWS_TF_FILE> <OUTPUT_LLD_FILE>", file=sys.stderr)
         sys.exit(1)
 
-    gcp_res_file = sys.argv[1]
-    aws_map_file = sys.argv[2]
-    aws_tf_file = sys.argv[3]
-    output_file = sys.argv[4]
-    main(gcp_res_file, aws_map_file, aws_tf_file, output_file)
+    input_tf_file = sys.argv[1]
+    output_lld_file = sys.argv[2]
+    main(input_tf_file, output_lld_file)
