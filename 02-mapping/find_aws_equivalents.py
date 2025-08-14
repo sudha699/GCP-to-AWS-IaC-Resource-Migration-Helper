@@ -12,6 +12,7 @@ load_dotenv()
 # --- Configuration ---
 # Your Gemini API key, retrieved from environment variables for security.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+print(f"DEBUG: The script is using API Key: {GEMINI_API_KEY}")
 
 # The correct base endpoint for the Gemini API.
 # Note: This should NOT include 'https://' or any path.
@@ -127,5 +128,6 @@ if __name__ == "__main__":
     input_file = sys.argv[1]
     output_file = sys.argv[2]
     main(input_file, output_file)
+
 
 
