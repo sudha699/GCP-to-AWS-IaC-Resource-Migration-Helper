@@ -3,6 +3,7 @@ import sys
 import json
 import requests
 from dotenv import load_dotenv
+import time
 
 # Load environment variables from .env file
 load_dotenv()
@@ -83,7 +84,8 @@ def main(input_tf_file, output_lld_file):
 
     if not gemini_response:
         print("[!] Failed to get a response from Gemini. Exiting.", file=sys.stderr)
-        sys.exit(1)
+        #sys.exit(1)
+        time.sleep(2)
 
     print("[*] Writing LLD to Markdown file.")
     
@@ -108,3 +110,4 @@ if __name__ == "__main__":
     input_tf_file = sys.argv[1]
     output_lld_file = sys.argv[2]
     main(input_tf_file, output_lld_file)
+
