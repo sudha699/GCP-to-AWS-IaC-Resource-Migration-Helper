@@ -32,7 +32,7 @@ def call_gemini(prompt):
         # 1. Adds the 'https://' scheme.
         # 2. Includes the full API path.
         # 3. Appends the API key as a query parameter.
-        url = f"https://{GEMINI_API_ENDPOINT}/v1/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+        url = f"https://{GEMINI_API_ENDPOINT}/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
         
         headers = {
             'Content-Type': 'application/json'
@@ -127,3 +127,4 @@ if __name__ == "__main__":
     input_file = sys.argv[1]
     output_file = sys.argv[2]
     main(input_file, output_file)
+
