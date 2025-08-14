@@ -77,8 +77,6 @@ def main(gcp_resource_list_file, output_csv_file):
         print("[!] No resources found. Exiting.", file=sys.stderr)
         sys.exit(0)
 
-    # The 'gcloud asset search-all-resources' command outputs a list of dictionaries.
-    # This list comprehension extracts just the string 'name' from each dictionary.
     try:
         gcp_resource_names = [res['name'] for res in gcp_resources_data]
     except (TypeError, KeyError) as e:
@@ -104,13 +102,17 @@ def main(gcp_resource_list_file, output_csv_file):
         sys.exit(1)
     
     print("[*] Writing mapping to CSV file.")
-    # The response might contain extra whitespace or markdown ticks.
+    # Extract the directory path from the output file path
+    output_dir = os.path.dirname(output_csv_file)
+    # Check if the directory exists, and create it if it doesn't
+    if output_dir: # ensure output_dir is not an empty string
+        os.makedirs(output_dir, exist_ok=True)
+    
     cleaned_response = gemini_response.strip('` \n').replace('`csv', '')
     
     with open(output_csv_file, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
         
-        # Check if Gemini included headers in the response. If not, add them.
         csv_lines = cleaned_response.split('\n')
         if not csv_lines[0].lower().startswith(OUTPUT_HEADERS[0].lower()):
             writer.writerow(OUTPUT_HEADERS)
@@ -128,6 +130,7 @@ if __name__ == "__main__":
     input_file = sys.argv[1]
     output_file = sys.argv[2]
     main(input_file, output_file)
+
 
 
 
