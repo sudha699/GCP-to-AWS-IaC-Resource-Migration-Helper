@@ -2,13 +2,15 @@ import os
 import sys
 import csv
 import requests
+import json
+
 
 # This script takes the AWS service mapping CSV and uses the Gemini API
 # to generate the Terraform HCL for the AWS resources.
 
 # --- Configuration ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-GEMINI_API_ENDPOINT = "https://your-gemini-api-endpoint/v1/models/gemini-pro:generateContent?key="
+GEMINI_API_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key="
 
 def call_gemini(prompt):
     """
@@ -92,3 +94,4 @@ if __name__ == "__main__":
     input_file = sys.argv[1]
     output_file = sys.argv[2]
     main(input_file, output_file)
+
