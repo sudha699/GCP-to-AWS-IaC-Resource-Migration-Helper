@@ -17,7 +17,7 @@ print(f"DEBUG: The script is using API Key: {GEMINI_API_KEY}")
 # The correct base endpoint for the Gemini API.
 # Note: This should NOT include 'https://' or any path.
 GEMINI_API_ENDPOINT = "generativelanguage.googleapis.com"
-GEMINI_MODEL = "gemini-1.0-pro"
+GEMINI_MODEL = "gemini-2.0-flash"
 OUTPUT_HEADERS = ['GCP_Resource', 'AWS_Equivalent_Service', 'Details']
 
 def call_gemini(prompt):
@@ -128,6 +128,7 @@ if __name__ == "__main__":
     input_file = sys.argv[1]
     output_file = sys.argv[2]
     main(input_file, output_file)
+
 
 
 
