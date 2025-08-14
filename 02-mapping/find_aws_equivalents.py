@@ -10,7 +10,7 @@ import csv
 # --- Configuration ---
 # Set your Gemini API key and endpoint as environment variables
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-GEMINI_API_ENDPOINT = "https://your-gemini-api-endpoint/v1/models/gemini-pro:generateContent?key="
+GEMINI_API_ENDPOINT = "generativelanguage.googleapis.com"
 
 def call_gemini(prompt):
     """
@@ -112,4 +112,5 @@ if __name__ == "__main__":
     input_file = sys.argv[1]
     output_file = sys.argv[2]
     main(input_file, output_file)
+
 
