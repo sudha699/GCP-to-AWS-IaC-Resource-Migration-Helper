@@ -53,11 +53,25 @@ def main(gcp_resource_list_file, output_csv_file):
     
     print(f"[*] Reading GCP resources from: {gcp_resource_list_file}")
     with open(gcp_resource_list_file, 'r') as f:
-        gcp_resources = json.load(f)
+        gcp_resources_data = json.load(f)
 
-    if not gcp_resources:
+    if not gcp_resources_data:
         print("[!] No resources found. Exiting.", file=sys.stderr)
         sys.exit(0)
+
+    # --- FIX START ---
+    # Extract just the 'name' attribute from each resource object
+    # The 'name' attribute is typically a string like "//compute.googleapis.com/projects/..."
+    try:
+        gcp_resource_names = [res['name'] for res in gcp_resources_data]
+    except KeyError:
+        # Fallback if the input is a simple list of strings
+        if all(isinstance(res, str) for res in gcp_resources_data):
+            gcp_resource_names = gcp_resources_data
+        else:
+            print("[!] Error: Unexpected format in the input JSON file. Each item must be an object with a 'name' key.", file=sys.stderr)
+            sys.exit(1)
+    # --- FIX END ---
 
     print("[*] Generating prompt for Gemini API...")
     prompt = (
@@ -67,7 +81,7 @@ def main(gcp_resource_list_file, output_csv_file):
         "'GCP_Resource', 'AWS_Equivalent_Service', 'Details'. "
         "The 'Details' column should be a short, concise description of the mapping and any considerations. "
         "Here is the list of GCP resources:\n"
-        f"{', '.join(gcp_resources)}"
+        f"{', '.join(gcp_resource_names)}"
     )
 
     print("[*] Calling Gemini API to get AWS equivalents...")
@@ -78,8 +92,15 @@ def main(gcp_resource_list_file, output_csv_file):
         sys.exit(1)
     
     print("[*] Writing mapping to CSV file.")
-    with open(output_csv_file, 'w', newline='') as csvfile:
-        csvfile.write(gemini_response)
+    # Gemini might return markdown, so we need to clean it up.
+    # We also need to add the headers if they are missing.
+    if not gemini_response.startswith('GCP_Resource,AWS_Equivalent_Service,Details'):
+        csv_content = 'GCP_Resource,AWS_Equivalent_Service,Details\n' + gemini_response
+    else:
+        csv_content = gemini_response
+        
+    with open(output_csv_file, 'w') as csvfile:
+        csvfile.write(csv_content)
 
     print(f"[✓] AWS mapping saved to: {output_csv_file}")
 
@@ -91,3 +112,4 @@ if __name__ == "__main__":
     input_file = sys.argv[1]
     output_file = sys.argv[2]
     main(input_file, output_file)
+
