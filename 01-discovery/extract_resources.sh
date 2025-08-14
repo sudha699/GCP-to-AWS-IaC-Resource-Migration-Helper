@@ -2,7 +2,7 @@
 
 # This script performs a comprehensive discovery of a GCP project,
 # including all resources, IAM policies, various service configurations,
-# and detailed GKE cluster/workload information for a robust migration plan.
+# detailed GKE cluster/workload information, and load balancer configurations.
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
@@ -65,7 +65,28 @@ gcloud compute firewall-rules list --project="${GCP_PROJECT_ID}" --format=json >
 echo "[*] Listing all VPC subnets..."
 gcloud compute networks subnets list --project="${GCP_PROJECT_ID}" --format=json > "${OUTPUT_DIR}/subnets.json"
 
-# --- 5. Application and Data Services ---
+# --- 5. Load Balancer Configuration ---
+echo ""
+echo "--- Load Balancer Discovery ---"
+echo "[*] Listing forwarding rules..."
+gcloud compute forwarding-rules list --project="${GCP_PROJECT_ID}" --format=json > "${OUTPUT_DIR}/lb_forwarding_rules.json"
+
+echo "[*] Listing backend services..."
+gcloud compute backend-services list --project="${GCP_PROJECT_ID}" --format=json > "${OUTPUT_DIR}/lb_backend_services.json"
+
+echo "[*] Listing URL maps..."
+gcloud compute url-maps list --project="${GCP_PROJECT_ID}" --format=json > "${OUTPUT_DIR}/lb_url_maps.json"
+
+echo "[*] Listing SSL certificates..."
+gcloud compute ssl-certificates list --project="${GCP_PROJECT_ID}" --format=json > "${OUTPUT_DIR}/lb_ssl_certificates.json"
+
+echo "[*] Listing target HTTP/S proxies..."
+gcloud compute target-http-proxies list --project="${GCP_PROJECT_ID}" --format=json > "${OUTPUT_DIR}/lb_target_http_proxies.json"
+gcloud compute target-https-proxies list --project="${GCP_PROJECT_ID}" --format=json > "${OUTPUT_DIR}/lb_target_https_proxies.json"
+
+# --- 6. Application and Data Services ---
+echo ""
+echo "--- Application & Data Services Discovery ---"
 echo "[*] Listing Pub/Sub topics and subscriptions..."
 gcloud pubsub topics list --project="${GCP_PROJECT_ID}" --format=json > "${OUTPUT_DIR}/pubsub_topics.json"
 gcloud pubsub subscriptions list --project="${GCP_PROJECT_ID}" --format=json > "${OUTPUT_DIR}/pubsub_subscriptions.json"
@@ -76,13 +97,12 @@ gcloud secrets list --project="${GCP_PROJECT_ID}" --format=json > "${OUTPUT_DIR}
 echo "[*] Listing BigQuery datasets..."
 gcloud alpha bq datasets list --project="${GCP_PROJECT_ID}" --format=json > "${OUTPUT_DIR}/bq_datasets.json"
 
-# --- 6. GKE and Kubernetes Configuration ---
+# --- 7. GKE and Kubernetes Configuration ---
 echo ""
 echo "--- GKE and Kubernetes Discovery ---"
 if ! command -v kubectl >/dev/null 2>&1; then
   echo "[!] kubectl not found. GKE workload discovery will be skipped."
 else
-  # Get list of GKE clusters
   GKE_CLUSTERS=$(gcloud container clusters list --project="${GCP_PROJECT_ID}" --format="json" || echo "[]")
 
   if [[ $(echo "$GKE_CLUSTERS" | jq 'length') -eq 0 ]]; then
@@ -91,20 +111,15 @@ else
       echo "$GKE_CLUSTERS" > "${OUTPUT_DIR}/gke_clusters.json"
       echo "[*] Found GKE clusters. Exporting cluster configs and workloads..."
 
-      # Loop through each cluster and export its details and workloads
       echo "$GKE_CLUSTERS" | jq -c '.[]' | while read -r CLUSTER_JSON; do
           CLUSTER_NAME=$(echo "$CLUSTER_JSON" | jq -r '.name')
           CLUSTER_LOCATION=$(echo "$CLUSTER_JSON" | jq -r '.location')
           
           echo "  > Processing cluster: ${CLUSTER_NAME} in ${CLUSTER_LOCATION}"
 
-          # Export node pool list
           gcloud container node-pools list --project="${GCP_PROJECT_ID}" --cluster="${CLUSTER_NAME}" --format=json > "${OUTPUT_DIR}/gke_node_pools_${CLUSTER_NAME}.json"
-
-          # Get credentials for kubectl
           gcloud container clusters get-credentials "${CLUSTER_NAME}" --region="${CLUSTER_LOCATION}" --project="${GCP_PROJECT_ID}"
 
-          # Export all Kubernetes workloads and resources
           kubectl get all --all-namespaces -o yaml > "${OUTPUT_DIR}/k8s_workloads_${CLUSTER_NAME}.yaml"
           kubectl get deployments,services,ingresses,configmaps,secrets,persistentvolumeclaims,storageclass --all-namespaces -o yaml > "${OUTPUT_DIR}/k8s_workloads_${CLUSTER_NAME}_detailed.yaml"
 
@@ -113,7 +128,7 @@ else
   fi
 fi
 
-# --- 7. Final Summary ---
+# --- 8. Final Summary ---
 echo ""
 echo "--- Discovery Complete ---"
 echo "All inventory files have been saved to the directory:"
