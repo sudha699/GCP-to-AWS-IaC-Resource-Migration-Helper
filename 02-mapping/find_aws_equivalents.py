@@ -1,44 +1,61 @@
+#!/usr/bin/env python3
 import os
-import sys
-import json
 import requests
+import json
 import csv
+import sys
+from dotenv import load_dotenv
 
-# This script takes a JSON list of GCP resources and uses the Gemini API
-# to find the equivalent AWS services and details.
+# Load environment variables from a .env file if it exists
+load_dotenv()
 
 # --- Configuration ---
-# Set your Gemini API key and endpoint as environment variables
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+# Your Gemini API key, retrieved from environment variables for security.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+# The correct base endpoint for the Gemini API.
+# Note: This should NOT include 'https://' or any path.
 GEMINI_API_ENDPOINT = "generativelanguage.googleapis.com"
+GEMINI_MODEL = "gemini-pro"
+OUTPUT_HEADERS = ['GCP_Resource', 'AWS_Equivalent_Service', 'Details']
 
 def call_gemini(prompt):
     """
     Calls the Gemini API with a given prompt and returns the response.
     """
     if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY environment variable not set.")
+        print("GEMINI_API_KEY environment variable not set. Please set it before running the script.", file=sys.stderr)
+        return None
 
-    headers = {"Content-Type": "application/json"}
-    url = f"{GEMINI_API_ENDPOINT}{GEMINI_API_KEY}"
-    
-    # A generic request body for Gemini API. Adjust as per your provider's spec.
-    data = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": prompt}
-                ]
-            }
-        ]
-    }
-    
     try:
-        response = requests.post(url, headers=headers, json=data)
-        response.raise_for_status()
+        # Corrected URL construction:
+        # 1. Adds the 'https://' scheme.
+        # 2. Includes the full API path.
+        # 3. Appends the API key as a query parameter.
+        url = f"https://{GEMINI_API_ENDPOINT}/v1/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
         
-        # Adjust based on the actual API response structure
+        headers = {
+            'Content-Type': 'application/json'
+        }
+        
+        data = {
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": prompt
+                        }
+                    ]
+                }
+            ]
+        }
+        
+        # Use requests.post for a POST request.
+        response = requests.post(url, headers=headers, data=json.dumps(data))
+        response.raise_for_status() # Raises an HTTPError for bad responses (4xx or 5xx)
+        
         return response.json()['candidates'][0]['content']['parts'][0]['text']
+
     except requests.exceptions.RequestException as e:
         print(f"Error calling Gemini API: {e}", file=sys.stderr)
         return None
@@ -59,20 +76,14 @@ def main(gcp_resource_list_file, output_csv_file):
         print("[!] No resources found. Exiting.", file=sys.stderr)
         sys.exit(0)
 
-    # --- FIX START ---
-    # Extract just the 'name' attribute from each resource object
-    # The 'name' attribute is typically a string like "//compute.googleapis.com/projects/..."
+    # The 'gcloud asset search-all-resources' command outputs a list of dictionaries.
+    # This list comprehension extracts just the string 'name' from each dictionary.
     try:
         gcp_resource_names = [res['name'] for res in gcp_resources_data]
-    except KeyError:
-        # Fallback if the input is a simple list of strings
-        if all(isinstance(res, str) for res in gcp_resources_data):
-            gcp_resource_names = gcp_resources_data
-        else:
-            print("[!] Error: Unexpected format in the input JSON file. Each item must be an object with a 'name' key.", file=sys.stderr)
-            sys.exit(1)
-    # --- FIX END ---
-
+    except (TypeError, KeyError) as e:
+        print(f"[!] Error parsing input JSON. Ensure it's a list of objects with a 'name' key. Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    
     print("[*] Generating prompt for Gemini API...")
     prompt = (
         "You are an expert cloud architect. I have a list of GCP resources. "
@@ -88,29 +99,31 @@ def main(gcp_resource_list_file, output_csv_file):
     gemini_response = call_gemini(prompt)
 
     if not gemini_response:
-        print("[!] Failed to get a response from Gemini.", file=sys.stderr)
+        print("[!] Failed to get a response from Gemini. Exiting.", file=sys.stderr)
         sys.exit(1)
     
     print("[*] Writing mapping to CSV file.")
-    # Gemini might return markdown, so we need to clean it up.
-    # We also need to add the headers if they are missing.
-    if not gemini_response.startswith('GCP_Resource,AWS_Equivalent_Service,Details'):
-        csv_content = 'GCP_Resource,AWS_Equivalent_Service,Details\n' + gemini_response
-    else:
-        csv_content = gemini_response
+    # The response might contain extra whitespace or markdown ticks.
+    cleaned_response = gemini_response.strip('` \n').replace('`csv', '')
+    
+    with open(output_csv_file, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
         
-    with open(output_csv_file, 'w') as csvfile:
-        csvfile.write(csv_content)
+        # Check if Gemini included headers in the response. If not, add them.
+        csv_lines = cleaned_response.split('\n')
+        if not csv_lines[0].lower().startswith(OUTPUT_HEADERS[0].lower()):
+            writer.writerow(OUTPUT_HEADERS)
+
+        for line in csv_lines:
+            writer.writerow(line.split(','))
 
     print(f"[✓] AWS mapping saved to: {output_csv_file}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Usage: python3 find_aws_equivalents.py <GCP_RESOURCE_LIST_JSON> <OUTPUT_CSV_FILE>")
+        print("Usage: python3 find_aws_equivalents.py <GCP_RESOURCE_LIST_JSON> <OUTPUT_CSV_FILE>", file=sys.stderr)
         sys.exit(1)
     
     input_file = sys.argv[1]
     output_file = sys.argv[2]
     main(input_file, output_file)
-
-
